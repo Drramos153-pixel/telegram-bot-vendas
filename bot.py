@@ -1,8 +1,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegraApplicationBuilderm.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 import os
 
-TOKEN = os.getenv("8641737018:AAF6DXmD_EIS1FWHNRIgmYnul4VXlPD0zb0")
+TOKEN = os.getenv("TOKEN")
 CANAL_LINK = "https://t.me/+LcqMJ8HuoUxiYjU5"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
