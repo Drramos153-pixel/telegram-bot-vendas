@@ -4,7 +4,7 @@ import time
 
 TOKEN = "SEU_TOKEN_AQUI"
 
-CANAL_ID = -1000000000000
+CANAL_ID = -1003699760336
 VALOR = "R$ 29,90"
 
 autorizados = set()
