@@ -1,80 +1,34 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ChatJoinRequestHandler, ContextTypes
-import time
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-TOKEN = "SEU_TOKEN_AQUI"
+TOKEN = "8641737018:AAF6DXmD_EIS1FWHNRIgmYnul4VXlPD0zb0"
 
-CANAL_ID = -1003699760336
-VALOR = "R$ 29,90"
-
-autorizados = set()
+CANAL_LINK = "https://t.me/+LcqMJ8HuoUxiYjU5"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     keyboard = [
-        [InlineKeyboardButton(f"Comprar acesso - {VALOR}", callback_data="comprar")]
+        [InlineKeyboardButton("Acessar Conteúdo VIP", callback_data="acesso")]
     ]
-
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"🔥 Conteúdo VIP\n\nAcesso único: {VALOR}",
+        "Bem-vindo ao conteúdo VIP.\n\nClique abaixo para acessar:",
         reply_markup=reply_markup
     )
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
     await query.answer()
 
-    user_id = query.from_user.id
-
-    if query.data == "comprar":
-
-        autorizados.add(user_id)
-
-        expire_date = int(time.time()) + 900
-
-        invite = await context.bot.create_chat_invite_link(
-            chat_id=CANAL_ID,
-            name=f"compra_{user_id}",
-            expire_date=expire_date,
-            creates_join_request=True
-        )
-
+    if query.data == "acesso":
         await query.message.reply_text(
-            "✅ Compra registrada\n\n"
-            "Seu link exclusivo:\n\n"
-            f"{invite.invite_link}\n\n"
-            "⚠️ Expira em 15 minutos"
-        )
-
-async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    req = update.chat_join_request
-    user_id = req.from_user.id
-
-    if user_id in autorizados:
-
-        await context.bot.approve_chat_join_request(
-            chat_id=req.chat.id,
-            user_id=user_id
-        )
-
-        autorizados.remove(user_id)
-
-    else:
-
-        await context.bot.decline_chat_join_request(
-            chat_id=req.chat.id,
-            user_id=user_id
+            f"Entre no canal privado:\n{CANAL_LINK}"
         )
 
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(button))
-app.add_handler(ChatJoinRequestHandler(handle_join_request))
 
 print("Bot iniciado...")
 
