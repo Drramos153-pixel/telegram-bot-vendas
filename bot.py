@@ -1,35 +1,40 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+import os
 
-TOKEN = "8641737018:AAF6DXmD_EIS1FWHNRIgmYnul4VXlPD0zb0"
-
-CANAL_LINK = "https://t.me/+LcqMJ8HuoUxiYjU5"
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     keyboard = [
-        [InlineKeyboardButton("Acessar Conteúdo VIP", callback_data="acesso")]
+        [InlineKeyboardButton("Comprar acesso VIP - R$29,90", callback_data="comprar")]
     ]
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "Bem-vindo ao conteúdo VIP.\n\nClique abaixo para acessar:",
+        "Conteúdo VIP 🔞\n\nClique abaixo para comprar acesso:",
         reply_markup=reply_markup
     )
 
+
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     query = update.callback_query
     await query.answer()
 
-    if query.data == "acesso":
+    if query.data == "comprar":
+
         await query.message.reply_text(
-            f"Entre no canal privado:\n{CANAL_LINK}"
+            "Gerando PIX para pagamento..."
         )
+
 
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(button))
 
-print("Bot iniciado...")
+print("Bot iniciado")
 
 app.run_polling()
