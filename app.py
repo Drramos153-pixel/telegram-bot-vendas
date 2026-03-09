@@ -61,11 +61,13 @@ def marcar_pago(payment_id: str):
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
     cur.execute(
-        "UPDATE pagamentos SET status = 'approved' WHERE payment_id = ?",
+        "UPDATE pagamentos SET status = 'approved' WHERE payment_id = ? AND status != 'approved'",
         (payment_id,)
     )
+    changed = cur.rowcount
     conn.commit()
     conn.close()
+    return changed > 0
 
 
 @app.route("/")
@@ -94,29 +96,30 @@ def webhook_mercadopago():
         user_id = buscar_usuario_por_payment(payment_id)
 
         if user_id:
-            marcar_pago(payment_id)
+            foi_marcado_agora = marcar_pago(payment_id)
 
-            expire_date = int(time.time()) + 3600
+            if foi_marcado_agora:
+                expire_date = int(time.time()) + 3600
 
-            invite = asyncio.run(
-                tg_app.bot.create_chat_invite_link(
-                    chat_id=CANAL_ID,
-                    member_limit=1,
-                    expire_date=expire_date,
-                    name=f"vip_{user_id}_{payment_id}"
-                )
-            )
-
-            asyncio.run(
-                tg_app.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        "✅ Pagamento confirmado!\n\n"
-                        f"Seu acesso VIP:\n{invite.invite_link}\n\n"
-                        "⚠️ Link válido para 1 acesso e expira em 1 hora."
+                invite = asyncio.run(
+                    tg_app.bot.create_chat_invite_link(
+                        chat_id=CANAL_ID,
+                        member_limit=1,
+                        expire_date=expire_date,
+                        name=f"vip_{user_id}_{payment_id}"
                     )
                 )
-            )
+
+                asyncio.run(
+                    tg_app.bot.send_message(
+                        chat_id=user_id,
+                        text=(
+                            "✅ Pagamento confirmado!\n\n"
+                            f"Seu acesso VIP:\n{invite.invite_link}\n\n"
+                            "⚠️ Link válido para 1 acesso e expira em 1 hora."
+                        )
+                    )
+                )
 
     return jsonify({"ok": True}), 200
 
@@ -155,8 +158,14 @@ async def comprar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         salvar_pagamento(user_id, payment_id)
 
         pix_code = data["point_of_interaction"]["transaction_data"]["qr_code"]
+
         await update.message.reply_text(
-            f"✅ PIX gerado com sucesso.\n\nCopie e pague:\n\n{pix_code}\n\n"
+            "✅ PIX gerado com sucesso.\n\nVou enviar o código copia e cola na próxima mensagem."
+        )
+
+        await update.message.reply_text(pix_code)
+
+        await update.message.reply_text(
             "Assim que o pagamento for aprovado, o link VIP será enviado automaticamente."
         )
     else:
