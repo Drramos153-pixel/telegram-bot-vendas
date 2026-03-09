@@ -1,4 +1,5 @@
 import os
+import uuid
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -25,7 +26,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         url = "https://api.mercadopago.com/v1/payments"
         headers = {
             "Authorization": f"Bearer {MP_ACCESS_TOKEN}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": str(uuid.uuid4())
         }
         body = {
             "transaction_amount": 29.90,
