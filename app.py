@@ -1,26 +1,173 @@
 import os
 import threading
 import asyncio
-from flask import Flask
+import uuid
+import time
+import sqlite3
+import requests
+from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
+CANAL_ID = int(os.getenv("CANAL_ID"))
+APP_BASE_URL = os.getenv("APP_BASE_URL")
 
+DB_FILE = "pagamentos.db"
 app = Flask(__name__)
+tg_app = None
+
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pagamentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_user_id INTEGER NOT NULL,
+            payment_id TEXT,
+            status TEXT DEFAULT 'pending'
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def salvar_pagamento(user_id: int, payment_id: str):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO pagamentos (telegram_user_id, payment_id, status) VALUES (?, ?, ?)",
+        (user_id, payment_id, "pending")
+    )
+    conn.commit()
+    conn.close()
+
+
+def buscar_usuario_por_payment(payment_id: str):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT telegram_user_id FROM pagamentos WHERE payment_id = ?",
+        (payment_id,)
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def marcar_pago(payment_id: str):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE pagamentos SET status = 'approved' WHERE payment_id = ?",
+        (payment_id,)
+    )
+    conn.commit()
+    conn.close()
+
 
 @app.route("/")
 def home():
     return "Servidor online"
 
 
+@app.route("/webhook/mercadopago", methods=["POST"])
+def webhook_mercadopago():
+    data = request.json or {}
+
+    if data.get("type") != "payment":
+        return jsonify({"ok": True}), 200
+
+    payment_id = str(data["data"]["id"])
+
+    url = f"https://api.mercadopago.com/v1/payments/{payment_id}"
+    headers = {
+        "Authorization": f"Bearer {MP_ACCESS_TOKEN}"
+    }
+
+    response = requests.get(url, headers=headers, timeout=30)
+    pagamento = response.json()
+
+    if pagamento.get("status") == "approved":
+        user_id = buscar_usuario_por_payment(payment_id)
+
+        if user_id:
+            marcar_pago(payment_id)
+
+            expire_date = int(time.time()) + 3600
+
+            invite = asyncio.run(
+                tg_app.bot.create_chat_invite_link(
+                    chat_id=CANAL_ID,
+                    member_limit=1,
+                    expire_date=expire_date,
+                    name=f"vip_{user_id}_{payment_id}"
+                )
+            )
+
+            asyncio.run(
+                tg_app.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "✅ Pagamento confirmado!\n\n"
+                        f"Seu acesso VIP:\n{invite.invite_link}\n\n"
+                        "⚠️ Link válido para 1 acesso e expira em 1 hora."
+                    )
+                )
+            )
+
+    return jsonify({"ok": True}), 200
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot funcionando!")
+    await update.message.reply_text(
+        "🔥 Acesso VIP 🔥\n\nClique em /comprar para gerar seu PIX de R$29,90."
+    )
+
+
+async def comprar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    url = "https://api.mercadopago.com/v1/payments"
+    headers = {
+        "Authorization": f"Bearer {MP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+        "X-Idempotency-Key": str(uuid.uuid4())
+    }
+    body = {
+        "transaction_amount": 29.90,
+        "description": "Acesso VIP Telegram",
+        "payment_method_id": "pix",
+        "notification_url": f"{APP_BASE_URL}/webhook/mercadopago",
+        "payer": {
+            "email": f"cliente_{user_id}@example.com",
+            "first_name": "Cliente"
+        }
+    }
+
+    response = requests.post(url, json=body, headers=headers, timeout=30)
+    data = response.json()
+
+    if "point_of_interaction" in data:
+        payment_id = str(data["id"])
+        salvar_pagamento(user_id, payment_id)
+
+        pix_code = data["point_of_interaction"]["transaction_data"]["qr_code"]
+        await update.message.reply_text(
+            f"✅ PIX gerado com sucesso.\n\nCopie e pague:\n\n{pix_code}\n\n"
+            "Assim que o pagamento for aprovado, o link VIP será enviado automaticamente."
+        )
+    else:
+        await update.message.reply_text(f"Erro ao gerar PIX:\n{data}")
 
 
 async def bot_main():
+    global tg_app
     tg_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     tg_app.add_handler(CommandHandler("start", start))
+    tg_app.add_handler(CommandHandler("comprar", comprar))
 
     print("Bot iniciado")
     await tg_app.initialize()
@@ -36,6 +183,7 @@ def run_bot():
 
 
 if __name__ == "__main__":
+    init_db()
     threading.Thread(target=run_bot, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
