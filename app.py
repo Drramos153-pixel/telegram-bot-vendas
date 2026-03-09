@@ -6,8 +6,8 @@ import time
 import sqlite3
 import requests
 from flask import Flask, request, jsonify
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
@@ -125,13 +125,35 @@ def webhook_mercadopago():
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🛒 Comprar acesso VIP", callback_data="comprar")],
+        [InlineKeyboardButton("ℹ️ Como funciona", callback_data="info")]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    mensagem = (
+        "🔥 *ACESSO VIP* 🔥\n\n"
+        "Conteúdo exclusivo liberado após pagamento.\n\n"
+        "💰 Valor: *R$29,90*\n"
+        "🔒 Pagamento único\n\n"
+        "Clique no botão abaixo para comprar."
+    )
+
     await update.message.reply_text(
-        "🔥 Acesso VIP 🔥\n\nClique em /comprar para gerar seu PIX de R$29,90."
+        mensagem,
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
     )
 
 
 async def comprar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    if update.callback_query:
+        user_id = update.callback_query.from_user.id
+        chat = update.callback_query.message
+    else:
+        user_id = update.effective_user.id
+        chat = update.message
 
     url = "https://api.mercadopago.com/v1/payments"
     headers = {
@@ -159,17 +181,33 @@ async def comprar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         pix_code = data["point_of_interaction"]["transaction_data"]["qr_code"]
 
-        await update.message.reply_text(
+        await chat.reply_text(
             "✅ PIX gerado com sucesso.\n\nVou enviar o código copia e cola na próxima mensagem."
         )
 
-        await update.message.reply_text(pix_code)
+        await chat.reply_text(pix_code)
 
-        await update.message.reply_text(
+        await chat.reply_text(
             "Assim que o pagamento for aprovado, o link VIP será enviado automaticamente."
         )
     else:
-        await update.message.reply_text(f"Erro ao gerar PIX:\n{data}")
+        await chat.reply_text(f"Erro ao gerar PIX:\n{data}")
+
+
+async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "comprar":
+        await comprar(update, context)
+
+    elif query.data == "info":
+        await query.message.reply_text(
+            "📌 Como funciona:\n\n"
+            "1️⃣ Clique em comprar\n"
+            "2️⃣ Pague o PIX gerado\n"
+            "3️⃣ Após o pagamento, você recebe automaticamente o acesso VIP."
+        )
 
 
 async def bot_main():
@@ -177,6 +215,7 @@ async def bot_main():
     tg_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     tg_app.add_handler(CommandHandler("start", start))
     tg_app.add_handler(CommandHandler("comprar", comprar))
+    tg_app.add_handler(CallbackQueryHandler(botoes))
 
     print("Bot iniciado")
     await tg_app.initialize()
